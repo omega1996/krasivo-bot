@@ -26,7 +26,7 @@ export class SendVideoAction implements KeywordAction {
     };
 
     // добавляем threadId, если это не обсуждение канала
-    if (msg.message_thread_id) {
+    if ((msg.chat as any).is_forum && msg.is_topic_message && msg.message_thread_id) {
       options.message_thread_id = msg.message_thread_id;
     }
 

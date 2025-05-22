@@ -11,13 +11,8 @@ import type {
   OpenAIChatCompletionRequest,
   OpenAIChatCompletionResponse,
 } from "../types";
+import { escapeHtml } from "../utils";
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
 
 export default function adminHandler(bot: TelegramBot) {
   bot.on("message", async (msg: Message) => {
