@@ -26,11 +26,11 @@ export default class KeywordActionFactory {
         "BAACAgIAAxkBAAOFaC9gjX6qe4mFtdJAeuitMcFdcwoAAnFzAALszoFJ7p3ZeXnw-0M2BA"
       ),
       new SendVideoAction(
-        ["ветеран", "ветерин", 'ветена'],
+        ["ветеран", "ветерин", "ветена"],
         "BAACAgIAAxkBAAOHaC9ksyUAAac_otf-eBnqPX9qGHLTAAJYZwAC17iBSZyI3C1u86nnNgQ"
       ),
       new SendVideoAction(
-        ["пять", "десять", 'пятнад', 'четыре', /(^|[^0-9])\d+([^0-9]|$)/g],
+        ["пять", "десять", "пятнад", "четыре", /(^|[^0-9])\d+([^0-9]|$)/g],
         "BAACAgIAAxkBAAOJaC9k76-HO6B6soKeUs2xNpsO7fAAAt1-AAK5tnlJkRisN-Ko-IY2BA"
       ),
       new SendVideoAction(
@@ -96,12 +96,16 @@ export default class KeywordActionFactory {
         "BAACAgIAAxkBAAO9aC9tei-XRfrKp6NMIRUX8APW5PUAAthnAALXuIFJ5B3lgqF9zmo2BA"
       ),
       new SendVideoAction(
-        [/(^|[^а-яА-Я])да([^а-яА-Я]|$)/g],
+        [/(^|[^а-яА-Я])да([^а-яА-Я]|$)/g, "да-да", "дада"],
         "BAACAgIAAxkBAAO_aC9tnaXPiRhNM13kl9AP5LSTtSgAAnt0AALszoFJNMg2R_3p7IM2BA"
       ),
       new SendVideoAction(
         ["боже"],
         "BAACAgIAAxkBAAPBaC9txGzNcSzAbDtsBvLvSHV1ItAAAnx0AALszoFJuOYsBtqUW6w2BA"
+      ),
+      new SendVideoAction(
+        ["мясо"],
+        "BAACAgIAAxkBAAPDaC9w-fX-cV2FyRc9ZZ9QL6tb_PsAAglbAAIIaRlKT9H23a6rJ-g2BA"
       ),
     ];
   }

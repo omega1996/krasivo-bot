@@ -11,6 +11,7 @@ export interface KeywordAction {
 export interface OpenAIChatMessage {
   role: "user" | "system" | "assistant";
   content: string;
+  images?: string[]
 }
 
 export interface OpenAIChatCompletionRequest {
