@@ -25,3 +25,9 @@ export async function toBase64String(url: string): Promise<string> {
   const arrayBuffer = await res.arrayBuffer();
   return Buffer.from(arrayBuffer).toString("base64"); // без data:префикса
 }
+
+
+export function escapeV2(text: string) {
+  return text.replace(/[_*[\]()~>#+\-=|{}.!]/g, "\\$&");
+}
+
