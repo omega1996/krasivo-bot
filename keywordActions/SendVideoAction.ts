@@ -29,7 +29,11 @@ export class SendVideoAction implements KeywordAction {
     if ((msg.chat as any).is_forum && msg.is_topic_message && msg.message_thread_id) {
       options.message_thread_id = msg.message_thread_id;
     }
-
-    await bot.sendVideo(msg.chat.id, this.videoId, options);
+    try {
+      await bot.sendVideo(msg.chat.id, this.videoId, options);
+    } catch (error) {
+      console.error(error);
+    }
+    
   }
 }

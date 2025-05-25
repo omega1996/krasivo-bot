@@ -117,11 +117,14 @@ export default function supergroupHandler(bot: TelegramBot) {
         const replyText =
           data?.choices?.[0]?.message?.content ||
           "Не удалось получить ответ от API";
-
-        await bot.sendMessage(msg.chat.id, escapeV2(replyText), {
-          reply_to_message_id: msg.message_id,
-          parse_mode: "MarkdownV2",
-        });
+        try {
+          await bot.sendMessage(msg.chat.id, escapeV2(replyText), {
+            reply_to_message_id: msg.message_id,
+            parse_mode: "MarkdownV2",
+          });
+        } catch (error) {
+          console.error(error);
+        }
       }
     } catch (err) {
       console.error("Ошибка при обработке сообщения:", err);
