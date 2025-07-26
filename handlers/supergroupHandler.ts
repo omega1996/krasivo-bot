@@ -42,6 +42,7 @@ export default function supergroupHandler(bot: TelegramBot) {
       }
 
       let base64DataUrl: string | null = null;
+      console.log(msg.photo)
       if (msg.photo && msg.photo.length) {
         const largest = msg.photo.at(-1) as PhotoSize;
         const link = await bot.getFileLink(largest.file_id);
@@ -57,6 +58,30 @@ export default function supergroupHandler(bot: TelegramBot) {
       // Строим сообщения под chat‑completion
       const messages: any[] = [{ role: "system", content: SYSTEM_PROMPT }];
       // ... заполнение messages как раньше
+      if (msg.reply_to_message) {
+        const prev = msg.reply_to_message;
+        const prevText = prev.text ?? prev.caption ?? "";
+        if (prevText) {
+          // Если предыдущее написал бот → роль assistant, иначе user
+          const prevRole = prev.from?.id === me.id ? "assistant" : "user";
+          if (prevRole === "assistant") {
+            messages.push({ role: "user", content: "неизвестное сообщение" });
+          }
+          messages.push({ role: prevRole, content: prevText });
+        }
+      }
+      console.log(base64DataUrl)
+      if (base64DataUrl) {
+        messages.push({
+          role: "user",
+          content: [
+            { type: "text", text: textContent || "Прокомментируй изображение" },
+            { type: "image_url", image_url: { url: base64DataUrl } },
+          ],
+        });
+      } else {
+        messages.push({ role: "user", content: textContent });
+      }
 
       // Проверяем, нужно ли обращаться к OpenAI
       if (
@@ -81,6 +106,8 @@ export default function supergroupHandler(bot: TelegramBot) {
           messages,
           stream: false,
         };
+
+        console.log(requestBody)
 
 
         const response = await fetch(`${API_URL}chat/completions`, {
