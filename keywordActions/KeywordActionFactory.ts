@@ -29,10 +29,10 @@ export default class KeywordActionFactory {
         ["ветеран", "ветерин", "ветена"],
         "BAACAgIAAxkBAAOHaC9ksyUAAac_otf-eBnqPX9qGHLTAAJYZwAC17iBSZyI3C1u86nnNgQ"
       ),
-      new SendVideoAction(
-        ["пять", "десять", "пятнад", "четыре", /(^|[^0-9])\d+([^0-9]|$)/g],
-        "BAACAgIAAxkBAAOJaC9k76-HO6B6soKeUs2xNpsO7fAAAt1-AAK5tnlJkRisN-Ko-IY2BA"
-      ),
+      // new SendVideoAction(
+      //   ["пять", "десять", "пятнад", "четыре", /(^|[^0-9])\d+([^0-9]|$)/g],
+      //   "BAACAgIAAxkBAAOJaC9k76-HO6B6soKeUs2xNpsO7fAAAt1-AAK5tnlJkRisN-Ko-IY2BA"
+      // ),
       new SendVideoAction(
         ["страш", "страх"],
         "BAACAgIAAxkBAAOYaC9mEtUX8285jz57CInruP7dAZoAArxuAAKWe3hJv9Ctu_6zD1Q2BA"

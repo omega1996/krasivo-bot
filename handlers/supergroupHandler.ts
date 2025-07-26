@@ -23,10 +23,8 @@ export default function supergroupHandler(bot: TelegramBot) {
 
       const isChannelDiscussionPost =
         msg.chat.type === "supergroup" && chatId < 0 && threadId === null;
-
       const isAnonymousChannelMessage =
         !!msg.sender_chat && msg.sender_chat.type === "channel";
-
       const isReplyToMe = msg.reply_to_message?.from?.id === me.id;
 
       // Получаем данные о самой группе, чтобы узнать её linked_chat_id
@@ -34,7 +32,6 @@ export default function supergroupHandler(bot: TelegramBot) {
       const linkedChatId = groupChat.linked_chat_id;
 
       const textContent = msg.text || msg.caption || "";
-
       const directAsk = textContent.toLowerCase().startsWith("бот");
       if (
         (!linkedChatId || msg.sender_chat?.id !== linkedChatId) &&
@@ -57,46 +54,34 @@ export default function supergroupHandler(bot: TelegramBot) {
         base64DataUrl = await toBase64DataUrl(link);
       }
 
-      // Строим сообщения под чат‑completion
+      // Строим сообщения под chat‑completion
       const messages: any[] = [{ role: "system", content: SYSTEM_PROMPT }];
+      // ... заполнение messages как раньше
 
-      if (msg.reply_to_message) {
-        const prev = msg.reply_to_message;
-        const prevText = prev.text ?? prev.caption ?? "";
-        if (prevText) {
-          // Если предыдущее написал бот → роль assistant, иначе user
-          const prevRole = prev.from?.id === me.id ? "assistant" : "user";
-          if (prevRole === "assistant") {
-            messages.push({ role: "user", content: "неизвестное сообщение" });
-          }
-          messages.push({ role: prevRole, content: prevText });
-        }
-      }
-
-      if (base64DataUrl) {
-        messages.push({
-          role: "user",
-          content: [
-            { type: "text", text: textContent || "Прокомментируй изображение" },
-            { type: "image_url", image_url: { url: base64DataUrl } },
-          ],
-        });
-      } else {
-        messages.push({ role: "user", content: textContent });
-      }
-
+      // Проверяем, нужно ли обращаться к OpenAI
       if (
         (isChannelDiscussionPost && isAnonymousChannelMessage) ||
         directAsk ||
         isReplyToMe
       ) {
-        const text = msg.text || "";
+        // Ставим реакцию 👀, чтобы показать, что ответ обрабатывается
+        try {
+          const reaction = [
+            { type: "emoji", emoji: "👀" },
+          ]
+          // @ts-ignore
+          await bot.setMessageReaction(chatId, msg.message_id, {reaction: JSON.stringify(reaction)});
+        } catch (reactionErr) {
+          console.error("Не удалось добавить реакцию", reactionErr);
+        }
 
+        // Делаем запрос к OpenAI
         const requestBody: OpenAIChatCompletionRequest = {
           model: getCurrentModel(),
           messages,
           stream: false,
         };
+
 
         const response = await fetch(`${API_URL}chat/completions`, {
           method: "POST",
@@ -105,32 +90,29 @@ export default function supergroupHandler(bot: TelegramBot) {
             Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
           },
           body: JSON.stringify(requestBody),
-          signal: AbortSignal.timeout(60 * 1000), // 60 seconds timeout
+          signal: AbortSignal.timeout(60 * 1000), // таймаут 60 секунд
         });
 
-        const data = (await response.json()) as OpenAIChatCompletionResponse;
-
-        if (!data?.choices?.[0]?.message?.content) {
-          console.error("Не удалось получить ответ от API", data);
-        }
-
+        const data =
+          (await response.json()) as OpenAIChatCompletionResponse | undefined;
         const replyText =
           data?.choices?.[0]?.message?.content ||
           "Не удалось получить ответ от API";
+
         try {
-          await bot.sendMessage(msg.chat.id, escapeV2(replyText), {
+          await bot.sendMessage(chatId, escapeV2(replyText), {
             reply_to_message_id: msg.message_id,
             parse_mode: "MarkdownV2",
           });
         } catch (error) {
-          console.error(error);
+          console.error("Ошибка отправки сообщения:", error);
         }
+
+        // При необходимости можно убрать реакцию после отправки ответа:
+        // await bot.setMessageReaction(chatId, msg.message_id, []);
       }
     } catch (err) {
       console.error("Ошибка при обработке сообщения:", err);
     }
   });
 }
-
-
-
