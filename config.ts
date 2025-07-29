@@ -1,45 +1,57 @@
-import fs from "fs";
-import path from "path";
+// src/config.ts
+import { BotSettings, getSettings, updateSettings } from "./db";
 
+/* —— единый TTL для всех кэшей — */
+const CACHE_TTL_MS = 60_000;
 
+/* —— model (как раньше) — */
+let cachedModel         = process.env.MODEL ?? "gemma-3-12b-it";
+let modelExpires        = 0;
 
-/** Путь к файлу, где хранится выбранная модель */
-const MODEL_PATH = path.resolve(process.cwd(), "data", "model.txt");
+/* —— cooldown — */
+let cachedCooldown      = Number(process.env.COOLDOWN ?? 300_000);
+let cooldownExpires     = 0;
 
-/**
- * Текущая модель OpenAI. Сначала пытаемся прочитать из файла MODEL_PATH,
- * иначе берём из переменной среды OPENAI_MODEL или fallback‑значение.
- */
-let currentModel: string = (() => {
-  try {
-    if (fs.existsSync(MODEL_PATH)) {
-      return fs.readFileSync(MODEL_PATH, "utf-8").trim();
-    }
-  } catch {
-    /* ignore */
-  }
-  return process.env.MODEL || "qwen2-vl-7b-instruct";
-})();
+/* —— system prompt — */
+let cachedPrompt        = process.env.SYSTEM_PROMPT ?? "Ты дружелюбный ассистент.";
+let promptExpires       = 0;
 
-/** Получить активную модель */
-export function getCurrentModel(): string {
-  return `${currentModel}`;
+/* ———— getters ———— */
+export async function getCurrentModel(): Promise<string> {
+  const now = Date.now();
+  if (now < modelExpires) return cachedModel;
+  try { cachedModel = (await getSettings()).model; modelExpires = now + CACHE_TTL_MS; }
+  catch (e) { console.error("[MODEL] Mongo err:", e); }
+  return cachedModel;
 }
 
-/** Установить новую активную модель и сохранить на диск */
-export function setCurrentModel(model: string): void {
-  currentModel = model.trim();
-  try {
-    fs.mkdirSync(path.dirname(MODEL_PATH), { recursive: true });
-    fs.writeFileSync(MODEL_PATH, currentModel, "utf-8");
-  } catch (err) {
-    console.error("Не удалось сохранить модель на диск:", err);
-  }
+export async function getCooldownMs(): Promise<number> {
+  const now = Date.now();
+  if (now < cooldownExpires) return cachedCooldown;
+  try { cachedCooldown = (await getSettings()).cooldownMs; cooldownExpires = now + CACHE_TTL_MS; }
+  catch (e) { console.error("[COOLDOWN] Mongo err:", e); }
+  return cachedCooldown;
 }
 
+export async function getSystemPrompt(): Promise<string> {
+  const now = Date.now();
+  if (now < promptExpires) return cachedPrompt;
+  try { cachedPrompt = (await getSettings()).systemPrompt; promptExpires = now + CACHE_TTL_MS; }
+  catch (e) { console.error("[PROMPT] Mongo err:", e); }
+  return cachedPrompt;
+}
 
+/* ———— централизованный patch ———— */
+export async function patchSettings(patch: Partial<BotSettings>) {
+  await updateSettings(patch);
+  const now = Date.now() + CACHE_TTL_MS;
+  if (patch.model        !== undefined) { cachedModel   = patch.model.trim();   modelExpires    = now; }
+  if (patch.cooldownMs   !== undefined) { cachedCooldown = patch.cooldownMs;    cooldownExpires = now; }
+  if (patch.systemPrompt !== undefined) { cachedPrompt  = patch.systemPrompt;   promptExpires   = now; }
+}
 
+/* ———— прочие константы ———— */
 export const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "";
-export const API_URL = process.env.API_URL || "";
-export const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID || '0') || 0;
-
+export const API_URL        = process.env.API_URL        || "";
+export const ADMIN_CHAT_ID  =
+  parseInt(process.env.ADMIN_CHAT_ID || "0", 10) || 0;
