@@ -82,33 +82,29 @@ export default function supergroupHandler(bot: TelegramBot) {
       console.timeEnd("extract_image");
       log("base64DataUrl present?", !!base64DataUrl);
 
-      const history = (
-        await getChatHistory(msg.chat.id, 10)
-      ).filter(h => h.messageId !== msg.message_id);      
+      const history = await getChatHistory(msg.chat.id, 10);
       // Строим сообщения под chat‑completion
       const messages: any[] = [{ role: "system", content: SYSTEM_PROMPT }];
 
       for (const h of history.reverse()) {
+        console.log("Автор: ", h.authorName);
         const role = h.fromId === me.id ? "assistant" : "user";
-        if (h.text) messages.push({ role, content: h.text });
-      }
+        let payloadText =
+          role === "user" && h.authorName
+            ? `пользователь с именем ${h.authorName} пишет: ${h.text ?? ""}`
+            : h.text ?? "";
 
-      if (msg.reply_to_message) {
-        const repliedId = msg.reply_to_message.message_id;
-        // есть ли оно уже в prompt?
-        if (!history.some(h => h.messageId === repliedId)) {
-          const repliedDoc = await findMessageById(msg.chat.id, repliedId);
-          const repliedText =
-            repliedDoc?.text ??
-            msg.reply_to_message.text ??
-            msg.reply_to_message.caption ??
-            "";
-      
-          if (repliedText) {
-            const role = repliedDoc?.fromId === me.id ? "assistant" : "user";
-            messages.push({ role, content: repliedText });
+        if (h.raw.reply_to_message) {
+          const parentId = h.raw.reply_to_message.message_id;
+          const parentDoc = await findMessageById(chatId, parentId);
+
+          if (parentDoc?.text) {
+            const who = parentDoc.authorName ?? "Сообщение";
+            payloadText =
+              payloadText + `. Пользователь отвечает на сообщение ${who}:\n«${parentDoc.text}»\n\n`
           }
         }
+        messages.push({ role, content: payloadText });
       }
 
       if (base64DataUrl) {
@@ -119,9 +115,7 @@ export default function supergroupHandler(bot: TelegramBot) {
             { type: "image_url", image_url: { url: base64DataUrl } },
           ],
         });
-      } else {
-        messages.push({ role: "user", content: textContent });
-      }
+      } 
 
       log("Messages for OpenAI", messages);
 

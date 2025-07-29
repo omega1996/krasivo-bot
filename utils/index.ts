@@ -56,3 +56,15 @@ export const extractImage = async (m: Message, bot: TelegramBot): Promise<string
   }
   return null;
 };
+
+export function pickAuthorName(msg: Message): string | undefined {
+  if (msg.from) {
+    return (
+      msg.from.username ||                // @username
+      [msg.from.first_name, msg.from.last_name].filter(Boolean).join(" ")
+    );
+  }
+  // если сообщение пришло от канала (анонимное), берём title
+  if (msg.sender_chat?.title) return msg.sender_chat.title;
+  return undefined;
+}
