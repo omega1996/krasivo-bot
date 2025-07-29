@@ -1,3 +1,5 @@
+import TelegramBot, { Document, Message, PhotoSize } from "node-telegram-bot-api";
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -31,3 +33,26 @@ export function escapeV2(text: string) {
   return text.replace(/[_*[\]()~>#+\-=|{}.!]/g, "\\$&");
 }
 
+const DEBUG = process.env.DEBUG_BOT !== "false";
+
+export const log = (...args: unknown[]) => DEBUG && console.log("[supergroup]", ...args);
+
+
+export const extractImage = async (m: Message, bot: TelegramBot): Promise<string | null> => {
+  try {
+    if (m.photo?.length) {
+      const largest = m.photo.at(-1) as PhotoSize;
+      const link = await bot.getFileLink(largest.file_id);
+      log("Found photo", link);
+      return toBase64DataUrl(link);
+    }
+    if (m.document && (m.document as Document).mime_type?.startsWith("image/")) {
+      const link = await bot.getFileLink(m.document.file_id);
+      log("Found document-image", link);
+      return toBase64DataUrl(link);
+    }
+  } catch (e) {
+    console.error("extractImage error", e);
+  }
+  return null;
+};

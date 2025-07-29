@@ -7,7 +7,7 @@ export default function keywordHandler(bot: TelegramBot) {
 
   // Map для хранения времени последнего ответа по chatId
   const lastReply = new Map<number, number>();
-  const COOLDOWN_MS = 5 * 60 * 1000; // 5 минут
+  const COOLDOWN_MS = parseInt(process.env.COOLDOWN ?? '300000'); // 5 минут
 
   bot.on("message", async (msg: Message) => {
     if (!msg.text) return;

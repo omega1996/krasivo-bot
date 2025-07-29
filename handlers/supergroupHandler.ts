@@ -1,20 +1,20 @@
 import TelegramBot from "node-telegram-bot-api";
 import type { Message, PhotoSize, Document } from "node-telegram-bot-api";
-import fetch, { RequestInit } from "node-fetch";
+import type { RequestInit }  from "node-fetch";
+import fetch from "node-fetch";
 import type {
   OpenAIChatCompletionRequest,
   OpenAIChatCompletionResponse,
 } from "../types";
 import { API_URL, getCurrentModel } from "../config";
-import { escapeV2, toBase64DataUrl } from "../utils";
+import { escapeV2, extractImage, log } from "../utils";
+import { saveMessage, getChatHistory, findMessageById } from "../db";
 
 /**
  * В этом файле добавлены подробные логи, чтобы понять, на каком шаге «зависает» бот.
  * Все потенциально долгие/опасные участки обёрнуты в try/catch и снабжены console.time.
  * Если нужно убрать «болтовню», можно задать переменную окружения DEBUG_BOT=false.
  */
-const DEBUG = process.env.DEBUG_BOT !== "false";
-const log = (...args: unknown[]) => DEBUG && console.log("[supergroup]", ...args);
 
 /**
  * Конфигurable timeout (ms) для запроса к OpenAI. Если не задано — 3 минуты.
@@ -34,6 +34,12 @@ export default function supergroupHandler(bot: TelegramBot) {
       msgId: msg.message_id,
       text: msg.text || msg.caption,
     });
+
+    try {
+      await saveMessage(msg);
+    } catch (dbErr) {
+      console.error("DB save error", dbErr);
+    }
 
     try {
       console.time("handler_total");
@@ -64,51 +70,44 @@ export default function supergroupHandler(bot: TelegramBot) {
         log("Not addressed to bot, skipping.");
         return;
       }
-
-      /**
-       * Вспомогательная функция для извлечения изображения из сообщения
-       */
-      const extractImage = async (m: Message): Promise<string | null> => {
-        try {
-          if (m.photo?.length) {
-            const largest = m.photo.at(-1) as PhotoSize;
-            const link = await bot.getFileLink(largest.file_id);
-            log("Found photo", link);
-            return toBase64DataUrl(link);
-          }
-          if (m.document && (m.document as Document).mime_type?.startsWith("image/")) {
-            const link = await bot.getFileLink(m.document.file_id);
-            log("Found document-image", link);
-            return toBase64DataUrl(link);
-          }
-        } catch (e) {
-          console.error("extractImage error", e);
-        }
-        return null;
-      };
+      
 
       console.time("extract_image");
       // Сначала ищем картинку в самом сообщении
-      let base64DataUrl: string | null = await extractImage(msg);
+      let base64DataUrl: string | null = await extractImage(msg, bot);
       // Если нет — пробуем найти изображение в сообщении, на которое отвечаем
       if (!base64DataUrl && msg.reply_to_message) {
-        base64DataUrl = await extractImage(msg.reply_to_message);
+        base64DataUrl = await extractImage(msg.reply_to_message, bot);
       }
       console.timeEnd("extract_image");
       log("base64DataUrl present?", !!base64DataUrl);
 
+      const history = (
+        await getChatHistory(msg.chat.id, 10)
+      ).filter(h => h.messageId !== msg.message_id);      
       // Строим сообщения под chat‑completion
       const messages: any[] = [{ role: "system", content: SYSTEM_PROMPT }];
 
+      for (const h of history.reverse()) {
+        const role = h.fromId === me.id ? "assistant" : "user";
+        if (h.text) messages.push({ role, content: h.text });
+      }
+
       if (msg.reply_to_message) {
-        const prev = msg.reply_to_message;
-        const prevText = prev.text ?? prev.caption ?? "";
-        if (prevText) {
-          const prevRole = prev.from?.id === me.id ? "assistant" : "user";
-          if (prevRole === "assistant") {
-            messages.push({ role: "user", content: "неизвестное сообщение" });
+        const repliedId = msg.reply_to_message.message_id;
+        // есть ли оно уже в prompt?
+        if (!history.some(h => h.messageId === repliedId)) {
+          const repliedDoc = await findMessageById(msg.chat.id, repliedId);
+          const repliedText =
+            repliedDoc?.text ??
+            msg.reply_to_message.text ??
+            msg.reply_to_message.caption ??
+            "";
+      
+          if (repliedText) {
+            const role = repliedDoc?.fromId === me.id ? "assistant" : "user";
+            messages.push({ role, content: repliedText });
           }
-          messages.push({ role: prevRole, content: prevText });
         }
       }
 
@@ -124,7 +123,7 @@ export default function supergroupHandler(bot: TelegramBot) {
         messages.push({ role: "user", content: textContent });
       }
 
-      log("Messages for OpenAI", JSON.stringify(messages, null, 2).slice(0, 500) + "…");
+      log("Messages for OpenAI", messages);
 
       const needLLM =
         (isChannelDiscussionPost && isAnonymousChannelMessage) ||
@@ -190,10 +189,16 @@ export default function supergroupHandler(bot: TelegramBot) {
 
       // Отправляем ответ
       try {
-        await bot.sendMessage(chatId, escapeV2(replyText), {
+        const botReply = await bot.sendMessage(chatId, escapeV2(replyText), {
           reply_to_message_id: msg.message_id,
           parse_mode: "MarkdownV2",
         });
+
+        try {
+          await saveMessage(botReply);          // теперь история полная
+        } catch (dbErr) {
+          console.error("DB save error (bot reply)", dbErr);
+        }
       } catch (sendErr) {
         console.error("Ошибка отправки сообщения", sendErr);
       }
