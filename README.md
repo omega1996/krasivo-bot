@@ -14,8 +14,10 @@ A Telegram bot built with TypeScript that provides AI-powered responses and keyw
    - MongoDB database on port 27017
    - Mongo Express (web interface) on port 8081
 
-2. **Install dependencies and run the bot**:
+2. **Set up environment and install dependencies**:
    ```bash
+   cp .env.example .env  # Create your .env file
+   # Edit .env with your actual tokens and settings
    bun install
    bun run index.ts
    ```
@@ -29,6 +31,47 @@ docker-compose up -d
 ```
 
 This starts all services including the Telegram bot container.
+
+## Environment Variables
+
+Create a `.env` file in the project root with the following variables:
+
+```bash
+# Telegram Bot Configuration
+TELEGRAM_TOKEN=your_telegram_bot_token_here
+ADMIN_CHAT_ID=your_admin_chat_id_here
+
+# AI Model Configuration
+MODEL=gemma3:12b
+API_URL=https://your-api-endpoint.com/v1/
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Debug Settings
+DEBUG_BOT=true
+
+# MongoDB Configuration
+MONGO_DB_NAME=telegramBot
+MONGO_ROOT_USER=root
+MONGO_ROOT_PASS=your_mongo_password_here
+
+# Mongo Express (Optional)
+MONGOEXPRESS_LOGIN=root
+MONGOEXPRESS_PASSWORD=your_mongo_express_password_here
+```
+
+### Required Variables
+
+- `TELEGRAM_TOKEN`: Your Telegram bot token from [@BotFather](https://t.me/botfather)
+- `ADMIN_CHAT_ID`: Your Telegram chat ID for admin commands
+- `API_URL`: OpenAI-compatible API endpoint URL
+- `OPENAI_API_KEY`: API key for the AI service
+
+### Optional Variables
+
+- `MODEL`: AI model name (default: `gemma3:12b`)
+- `DEBUG_BOT`: Enable debug logging (default: `true`)
+- `MONGO_*`: MongoDB connection settings (defaults provided)
+- `MONGOEXPRESS_*`: Mongo Express web interface settings
 
 ## Architecture
 
@@ -62,6 +105,7 @@ We welcome contributions to improve the Krasivo Bot! Here's how you can get invo
    ```bash
    bun install
    cp .env.example .env  # Create your own .env file with your tokens
+   # Edit .env file with your actual tokens and settings
    docker-compose up mongo mongo-express -d  # Start MongoDB services
    ```
 
