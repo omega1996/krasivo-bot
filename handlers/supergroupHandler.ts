@@ -1,6 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import type { Message, PhotoSize, Document } from "node-telegram-bot-api";
-import type { RequestInit }  from "node-fetch";
+import type { RequestInit } from "node-fetch";
 import fetch from "node-fetch";
 import type {
   OpenAIChatCompletionRequest,
@@ -8,9 +8,13 @@ import type {
 } from "../types";
 import { API_URL, getCurrentModel, getSystemPrompt } from "../config"; // ✨ добавили getSystemPrompt
 import { escapeV2, extractImage, log } from "../utils";
-import { saveMessage, getChatHistory, findMessageById } from "../db";
-import { openai } from "../utils/openai";  
-
+import {
+  saveMessage,
+  getChatHistory,
+  findMessageById,
+  getTodayStats,
+} from "../db";
+import { openai } from "../utils/openai";
 
 export default function supergroupHandler(bot: TelegramBot) {
   bot.on("message", async (msg: Message) => {
@@ -19,6 +23,48 @@ export default function supergroupHandler(bot: TelegramBot) {
       msgId: msg.message_id,
       text: msg.text || msg.caption,
     });
+
+    // Обработка команды /stats
+    if (msg.text && msg.text.startsWith("/stats")) {
+      try {
+        const stats = await getTodayStats(msg.chat.id);
+
+        // Получаем топ-3 пользователей
+        const topUsers = stats.userStats.slice(0, 3);
+
+        let topUsersText = "Топ-3 активных пользователей:\n";
+        if (topUsers.length === 0) {
+          topUsersText += "Пока никто не писал 😴";
+        } else {
+          topUsers.forEach((user, index) => {
+            const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : "🥉";
+            topUsersText += `${medal} ${user.userName}: ${user.messageCount} сообщений\n`;
+          });
+        }
+
+        const statsText =
+          "📊 Статистика за сегодня:\n\n" +
+          `Сообщений: ${stats.totalMessages}\n` +
+          `Стикеров: ${stats.stickers}\n` +
+          `Гифок: ${stats.gifs}\n` +
+          `Фото: ${stats.photos}\n` +
+          `Видео: ${stats.videos}\n\n` +
+          topUsersText;
+
+        await bot.sendMessage(msg.chat.id, statsText, {
+          reply_to_message_id: msg.message_id,
+        });
+        return;
+      } catch (err) {
+        console.error("Ошибка при получении статистики:", err);
+        await bot.sendMessage(
+          msg.chat.id,
+          "❌ Ошибка при получении статистики",
+          { reply_to_message_id: msg.message_id }
+        );
+        return;
+      }
+    }
 
     try {
       await saveMessage(msg);
@@ -55,7 +101,6 @@ export default function supergroupHandler(bot: TelegramBot) {
         log("Not addressed to bot, skipping.");
         return;
       }
-      
 
       console.time("extract_image");
       // Сначала ищем картинку в самом сообщении
@@ -88,7 +133,8 @@ export default function supergroupHandler(bot: TelegramBot) {
           if (parentDoc?.text) {
             const who = parentDoc.authorName ?? "Сообщение";
             payloadText =
-              payloadText + `. Пользователь отвечает на сообщение ${who}:\n«${parentDoc.text}»\n\n`
+              payloadText +
+              `. Пользователь отвечает на сообщение ${who}:\n«${parentDoc.text}»\n\n`;
           }
         }
         messages.push({ role, content: payloadText });
@@ -102,7 +148,7 @@ export default function supergroupHandler(bot: TelegramBot) {
             { type: "image_url", image_url: { url: base64DataUrl } },
           ],
         });
-      } 
+      }
 
       log("Messages for OpenAI", messages);
 
@@ -120,13 +166,14 @@ export default function supergroupHandler(bot: TelegramBot) {
       try {
         const reaction = [{ type: "emoji", emoji: "👀" }];
         // @ts-ignore
-        await bot.setMessageReaction(chatId, msg.message_id, { reaction: JSON.stringify(reaction) });
+        await bot.setMessageReaction(chatId, msg.message_id, {
+          reaction: JSON.stringify(reaction),
+        });
       } catch (reactionErr) {
         console.error("Не удалось добавить реакцию", reactionErr);
       }
 
       // Делаем запрос к OpenAI
-
 
       let replyText = "Тсссс, я сплю, не буди";
       try {
@@ -141,11 +188,28 @@ export default function supergroupHandler(bot: TelegramBot) {
           console.log("token", token);
           if (token) replyText += token;
         }
-
       } catch (fetchErr: any) {
-        
         console.error("OpenAI fetch error", fetchErr);
-        // replyText += ` (ошибка: ${fetchErr.message})`;
+
+        // Определяем тип ошибки и устанавливаем соответствующий ответ
+        if (
+          fetchErr.name === "APIConnectionTimeoutError" ||
+          fetchErr.message?.includes("timeout")
+        ) {
+          replyText =
+            "⏰ Извините, запрос занял слишком много времени. Попробуйте еще раз.";
+        } else if (fetchErr.status === 429) {
+          replyText =
+            "🚫 Слишком много запросов. Подождите немного и попробуйте снова.";
+        } else if (fetchErr.status === 401) {
+          replyText =
+            "🔑 Проблема с авторизацией API. Обратитесь к администратору.";
+        } else if (fetchErr.status >= 500) {
+          replyText = "🔧 Сервер временно недоступен. Попробуйте позже.";
+        } else {
+          replyText =
+            "❌ Произошла ошибка при обработке запроса. Попробуйте еще раз.";
+        }
       }
 
       // Отправляем ответ
@@ -156,7 +220,7 @@ export default function supergroupHandler(bot: TelegramBot) {
         });
 
         try {
-          await saveMessage(botReply);          // теперь история полная
+          await saveMessage(botReply); // теперь история полная
         } catch (dbErr) {
           console.error("DB save error (bot reply)", dbErr);
         }
