@@ -1,22 +1,50 @@
 # Krasivo Bot
 
-A Telegram bot built with TypeScript and Bun that provides AI-powered responses and keyword-triggered actions.
+A Telegram bot built with TypeScript that provides AI-powered responses and keyword-triggered actions. The bot uses MongoDB to store conversation history and model settings.
 
 ## Quick Start
 
-To install dependencies:
+### For Development
+
+1. **Start MongoDB services** (required for bot functionality):
+   ```bash
+   docker-compose up mongo mongo-express -d
+   ```
+   This starts:
+   - MongoDB database on port 27017
+   - Mongo Express (web interface) on port 8081
+
+2. **Install dependencies and run the bot**:
+   ```bash
+   bun install
+   bun run index.ts
+   ```
+
+### For Production
+
+Run the complete stack with Docker Compose:
 
 ```bash
-bun install
+docker-compose up -d
 ```
 
-To run:
+This starts all services including the Telegram bot container.
 
-```bash
-bun run index.ts
-```
+## Architecture
 
-This project was created using `bun init` in bun v1.1.42. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+The bot consists of several key components:
+
+- **Telegram Bot**: Handles incoming messages and responses
+- **MongoDB**: Stores conversation history per chat and bot settings
+- **AI Integration**: Uses OpenAI-compatible API for generating responses
+- **Keyword Actions**: Triggers specific actions based on message content
+
+### Data Storage
+
+MongoDB stores:
+- **Conversation History**: Message threads organized by chat ID
+- **Bot Settings**: Model configuration, cooldown settings, system prompts
+- **Admin Settings**: Configuration managed through admin commands
 
 ## Contributing
 
@@ -34,6 +62,7 @@ We welcome contributions to improve the Krasivo Bot! Here's how you can get invo
    ```bash
    bun install
    cp .env.example .env  # Create your own .env file with your tokens
+   docker-compose up mongo mongo-express -d  # Start MongoDB services
    ```
 
 ### Making Changes
