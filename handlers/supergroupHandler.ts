@@ -9,17 +9,7 @@ import type {
 import { API_URL, getCurrentModel, getSystemPrompt } from "../config"; // ✨ добавили getSystemPrompt
 import { escapeV2, extractImage, log } from "../utils";
 import { saveMessage, getChatHistory, findMessageById } from "../db";
-
-/**
- * В этом файле добавлены подробные логи, чтобы понять, на каком шаге «зависает» бот.
- * Все потенциально долгие/опасные участки обёрнуты в try/catch и снабжены console.time.
- * Если нужно убрать «болтовню», можно задать переменную окружения DEBUG_BOT=false.
- */
-
-/**
- * Конфигurable timeout (ms) для запроса к OpenAI. Если не задано — 3 минуты.
- */
-const OPENAI_TIMEOUT_MS = parseInt(process.env.OPENAI_TIMEOUT ?? "180000", 10);
+import { openai } from "../utils/openai";  
 
 
 export default function supergroupHandler(bot: TelegramBot) {
@@ -136,46 +126,26 @@ export default function supergroupHandler(bot: TelegramBot) {
       }
 
       // Делаем запрос к OpenAI
-      const requestBody: OpenAIChatCompletionRequest = {
-        model: await getCurrentModel(),
-        messages,
-        stream: false,
-      };
 
-      log(`Requesting OpenAI (timeout ${OPENAI_TIMEOUT_MS}ms)…`);
-      console.time("openai_fetch");
-      let replyText = "Не удалось получить ответ от API";
+
+      let replyText = "Тсссс, я сплю, не буди";
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+        const stream = await openai.chat.completions.create({
+          model: await getCurrentModel(),
+          messages,
+          stream: true,
+        });
 
-        const fetchOptions: RequestInit = {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        };
-
-        const response = await fetch(`${API_URL}chat/completions`, fetchOptions);
-        clearTimeout(timeout);
-        console.timeEnd("openai_fetch");
-
-        if (!response.ok) {
-          const errTxt = await response.text();
-          throw new Error(`OpenAI HTTP ${response.status}: ${errTxt}`);
+        for await (const chunk of stream) {
+          const token = chunk.choices?.[0]?.delta?.content;
+          console.log("token", token);
+          if (token) replyText += token;
         }
 
-        const data = (await response.json()) as OpenAIChatCompletionResponse;
-        replyText = data?.choices?.[0]?.message?.content || replyText;
       } catch (fetchErr: any) {
-        if (fetchErr.name === "AbortError") {
-          fetchErr.message = `превышен лимит ${OPENAI_TIMEOUT_MS / 1000}s`;
-        }
+        
         console.error("OpenAI fetch error", fetchErr);
-        replyText += ` (ошибка: ${fetchErr.message})`;
+        // replyText += ` (ошибка: ${fetchErr.message})`;
       }
 
       // Отправляем ответ

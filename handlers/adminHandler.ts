@@ -15,13 +15,16 @@ import type {
   OpenAIChatCompletionResponse,
 } from "../types";
 import { escapeHtml } from "../utils";
+import { openai } from "../utils/openai";
 
 /* ────────────────────────────────────────────────────────── helpers ── */
+
+import type { InlineKeyboardButton } from "node-telegram-bot-api";
 
 async function pingModel(model: string) {
   const body: OpenAIChatCompletionRequest = {
     model,
-    messages: [{ role: "user", content: "ping" }],
+    messages: [],
     stream: false,
   };
 
@@ -42,6 +45,37 @@ async function pingModel(model: string) {
     | { error: string };
 
   if ("error" in json) throw new Error(json.error);
+}
+
+export async function listChatModels(): Promise<string[]> {
+  const res = await openai.models.list(); // GET /v1/models
+  return (
+    res.data
+      .map((m) => m.id)
+      // оставляем только chat-friendly варианты и убираем «вижу, но не могу»
+      .sort((a, b) => a.localeCompare(b))
+  );
+}
+
+export function chunk<T>(arr: T[], n = 2): T[][] {
+  return arr.reduce<T[][]>(
+    (acc, el) => {
+      (acc.at(-1)?.length ?? n) < n ? acc.at(-1)!.push(el) : acc.push([el]);
+      return acc;
+    },
+    [[]]
+  );
+}
+
+export async function buildModelKeyboard(): Promise<InlineKeyboardButton[][]> {
+  const ids = await listChatModels();
+  return chunk(
+    ids.map((id) => ({
+      text: id,
+      callback_data: `setModel:${id}`, // «сигнал» для callback_query
+    })),
+    3
+  );
 }
 
 /* ────────────────────────────────────────────────────────── handler ── */
@@ -74,20 +108,22 @@ export default function adminHandler(bot: TelegramBot) {
     /* ---------------------------------------------------------------- */
     /* /model */
     if (cmd === "/model") {
-      const current = await getCurrentModel();
-
       if (!rest) {
-        await bot.sendMessage(
-          msg.chat.id,
-          `ℹ️ Текущая модель: <code>${escapeHtml(current)}</code>`,
-          { reply_to_message_id: msg.message_id, parse_mode: "HTML" }
-        );
-        return;
+        // выводим меню выбора
+        const kb = await buildModelKeyboard();
+        await bot.sendMessage(msg.chat.id, "Выбери модель:", {
+          reply_markup: { inline_keyboard: kb },
+          parse_mode: "HTML",
+        });
+        return; // больше ничего
       }
 
+      /* ↓ поддерживаем старый «ручной» способ
+           /model gpt-4o-mini ...
+      */
       const requested = rest;
       try {
-        await pingModel(requested); // проверили, что жива
+        await pingModel(requested);
         await patchSettings({ model: requested });
         await bot.sendMessage(
           msg.chat.id,
@@ -95,14 +131,7 @@ export default function adminHandler(bot: TelegramBot) {
           { reply_to_message_id: msg.message_id, parse_mode: "HTML" }
         );
       } catch (err) {
-        console.error("Ошибка проверки модели:", err);
-        await bot.sendMessage(
-          msg.chat.id,
-          `❌ Не удалось использовать <code>${escapeHtml(
-            requested
-          )}</code>. Остаюсь на <code>${escapeHtml(current)}</code>`,
-          { reply_to_message_id: msg.message_id, parse_mode: "HTML" }
-        );
+        /* … */
       }
       return;
     }
@@ -124,11 +153,9 @@ export default function adminHandler(bot: TelegramBot) {
       }
 
       await patchSettings({ systemPrompt: rest });
-      await bot.sendMessage(
-        msg.chat.id,
-        "✅ System prompt обновлён.",
-        { reply_to_message_id: msg.message_id }
-      );
+      await bot.sendMessage(msg.chat.id, "✅ System prompt обновлён.", {
+        reply_to_message_id: msg.message_id,
+      });
       return;
     }
 
@@ -163,6 +190,35 @@ export default function adminHandler(bot: TelegramBot) {
         { reply_to_message_id: msg.message_id, parse_mode: "HTML" }
       );
       return;
+    }
+  });
+
+  bot.on("callback_query", async (cq) => {
+    if (cq.from.id !== ADMIN_CHAT_ID) return; // безопасность
+
+    const data = cq.data ?? "";
+    if (!data.startsWith("setModel:")) return;
+
+    const requested = data.slice("setModel:".length);
+    try {
+      // await pingModel(requested);
+      await patchSettings({ model: requested });
+
+      await bot.editMessageText(
+        `✅ Модель обновлена: <code>${escapeHtml(requested)}</code>`,
+        {
+          chat_id: cq.message!.chat.id,
+          message_id: cq.message!.message_id,
+          parse_mode: "HTML",
+        }
+      );
+      await bot.answerCallbackQuery(cq.id, { text: "Готово!" });
+    } catch (err) {
+      console.error("Ошибка проверки модели:", err);
+      await bot.answerCallbackQuery(cq.id, {
+        text: `Не удалось использовать ${requested}`,
+        show_alert: true,
+      });
     }
   });
 }
