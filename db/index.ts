@@ -4,10 +4,14 @@ import { log, pickAuthorName } from "../utils";
 
 /* =====  подключение  ===== */
 
+// Определяем хост MongoDB в зависимости от окружения
+// В Docker контейнере используем IP адрес для обхода проблем с DNS
+const mongoHost = process.env.MONGO_HOST ?? (process.env.NODE_ENV === 'production' ? "172.28.0.2" : "localhost");
+
 const uri =
   `mongodb://${encodeURIComponent(process.env.MONGO_ROOT_USER ?? "root")}` +
   `:${encodeURIComponent(process.env.MONGO_ROOT_PASS ?? "rootpass")}` +
-  `@${process.env.MONGO_HOST ?? "mongo"}:${process.env.MONGO_PORT ?? "27017"}` +
+  `@${mongoHost}:${process.env.MONGO_PORT ?? "27017"}` +
   `/${process.env.MONGO_DB_NAME ?? "telegramBot"}?authSource=admin`;
 
 const dbName = process.env.MONGODB_DB ?? "telegramBot";
@@ -18,9 +22,27 @@ let db: Db | null = null;
 async function getDb(): Promise<Db> {
   if (db) return db;
   log("[DATABASE] создаём соединение");
-  client = new MongoClient(uri);
+  client = new MongoClient(uri, {
+    serverSelectionTimeoutMS: 10000, // 10 секунд таймаут
+    connectTimeoutMS: 10000,
+    socketTimeoutMS: 45000,
+  });
   console.log("[DATABASE] URI =", uri);
-  await client.connect();
+
+  try {
+    await client.connect();
+    // Проверяем подключение
+    await client.db("admin").command({ ping: 1 });
+    console.log("[DATABASE] Успешно подключились к MongoDB");
+  } catch (error) {
+    console.error("[DATABASE] Ошибка подключения к MongoDB:", error);
+    throw new Error(
+      `Не удалось подключиться к MongoDB: ${
+        error instanceof Error ? error.message : "Неизвестная ошибка"
+      }`
+    );
+  }
+
   db = client.db(dbName);
   return db;
 }
@@ -62,28 +84,43 @@ async function getMessagesColl() {
 }
 
 export async function saveMessage(msg: Message, imageUrl?: string | null) {
-  const c = await getMessagesColl();
-  await c.insertOne({
-    chatId: msg.chat.id,
-    messageId: msg.message_id,
-    replyToId: msg.reply_to_message?.message_id,
-    fromId: msg.from?.id,
-    authorName: pickAuthorName(msg),
-    date: new Date(msg.date * 1000),
-    text: msg.text ?? msg.caption ?? null,
-    imageUrl: imageUrl ?? null,
-    raw: msg,
-  });
+  try {
+    const c = await getMessagesColl();
+    await c.insertOne({
+      chatId: msg.chat.id,
+      messageId: msg.message_id,
+      replyToId: msg.reply_to_message?.message_id,
+      fromId: msg.from?.id,
+      authorName: pickAuthorName(msg),
+      date: new Date(msg.date * 1000),
+      text: msg.text ?? msg.caption ?? null,
+      imageUrl: imageUrl ?? null,
+      raw: msg,
+    });
+  } catch (error) {
+    console.error("[DATABASE] Ошибка сохранения сообщения:", error);
+    // Не выбрасываем ошибку, чтобы бот продолжал работать
+  }
 }
 
 export async function getChatHistory(chatId: number, limit = 10) {
-  const c = await getMessagesColl();
-  return c.find({ chatId }).sort({ date: -1 }).limit(limit).toArray();
+  try {
+    const c = await getMessagesColl();
+    return c.find({ chatId }).sort({ date: -1 }).limit(limit).toArray();
+  } catch (error) {
+    console.error("[DATABASE] Ошибка получения истории чата:", error);
+    return []; // Возвращаем пустой массив при ошибке
+  }
 }
 
 export async function findMessageById(chatId: number, msgId: number) {
-  const c = await getMessagesColl();
-  return c.findOne({ chatId, messageId: msgId });
+  try {
+    const c = await getMessagesColl();
+    return c.findOne({ chatId, messageId: msgId });
+  } catch (error) {
+    console.error("[DATABASE] Ошибка поиска сообщения:", error);
+    return null; // Возвращаем null при ошибке
+  }
 }
 
 /* =====  message stats  ===== */
@@ -190,19 +227,38 @@ const SYSTEM_PROMPT =
 
 /** вернуть настройки (с дефолтами) */
 export async function getSettings(): Promise<ResolvedSettings> {
-  const coll = await getSettingsColl();
-  const doc = await coll.findOne({ _id: "singleton" }); // BotSettings | null
+  try {
+    const coll = await getSettingsColl();
+    const doc = await coll.findOne({ _id: "singleton" }); // BotSettings | null
 
-  // создаём объект с гарантированными полями
-  return {
-    model: doc?.model ?? process.env.MODEL ?? "",
-    systemPrompt: doc?.systemPrompt ?? SYSTEM_PROMPT,
-    cooldownMs: doc?.cooldownMs ?? 300_000,
-  };
+    // создаём объект с гарантированными полями
+    return {
+      model: doc?.model ?? process.env.MODEL ?? "",
+      systemPrompt: doc?.systemPrompt ?? SYSTEM_PROMPT,
+      cooldownMs: doc?.cooldownMs ?? 300_000,
+    };
+  } catch (error) {
+    console.error("[DATABASE] Ошибка получения настроек:", error);
+    // Возвращаем настройки по умолчанию при ошибке
+    return {
+      model: process.env.MODEL ?? "",
+      systemPrompt: SYSTEM_PROMPT,
+      cooldownMs: 300_000,
+    };
+  }
 }
 
 /** патч‑обновление */
 export async function updateSettings(patch: Partial<BotSettings>) {
-  const coll = await getSettingsColl();
-  await coll.updateOne({ _id: "singleton" }, { $set: patch }, { upsert: true });
+  try {
+    const coll = await getSettingsColl();
+    await coll.updateOne(
+      { _id: "singleton" },
+      { $set: patch },
+      { upsert: true }
+    );
+  } catch (error) {
+    console.error("[DATABASE] Ошибка обновления настроек:", error);
+    throw error; // Выбрасываем ошибку, так как это критическая операция
+  }
 }

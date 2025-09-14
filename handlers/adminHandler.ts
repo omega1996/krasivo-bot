@@ -35,6 +35,7 @@ async function pingModel(model: string) {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000), // 30 секунд таймаут
   });
 
   if (!res.ok) {
